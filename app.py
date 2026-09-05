@@ -1,151 +1,176 @@
-import pygame
-import math
-import sys
+import streamlit as st
+import streamlit.components.v1 as components
 
-# Pygame Setup
-pygame.init()
-WIDTH, HEIGHT = 1000, 700
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Interactive Skeletal Dragon Cursor")
-clock = pygame.time.Clock()
+# Page Layout Configuration
+st.set_page_config(page_title="Interactive Dragon Cursor", layout="centered")
+st.title("🐉 Interactive Skeletal Dragon Web App")
+st.caption("Apne mouse/cursor ko screen par ghumao aur dragon aapko follow karega!")
 
-# Segment class jo dragon ki bones ko control karegi
-class Segment:
-    def __init__(self, x, y, length, size):
-        self.x = x
-        self.y = y
-        self.length = length
-        self.size = size
-        self.angle = 0
+# HTML + CSS + JS Integration for Canvas Animation
+html_code = """
+<div style="background-color: #111; display: flex; justify-content: center; align-items: center; height: 80vh; width: 100%; overflow: hidden; position: relative;">
+    <canvas id="dragonCanvas" style="display: block; cursor: crosshair;"></canvas>
+</div>
+<script>
+    const canvas = document.getElementById('dragonCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Canvas dimensions within container
+    canvas.width = 700;
+    canvas.height = 550;
+    
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
 
-    def update(self, target_x, target_y):
-        dx = target_x - self.x
-        dy = target_y - self.y
-        self.angle = math.atan2(dy, dx)
-        
-        # Bones ko aage khinchne ka Inverse Kinematics logic
-        self.x = target_x - math.cos(self.angle) * self.length
-        self.y = target_y - math.sin(self.angle) * self.length
+    const mouse = { x: centerX, y: centerY };
 
-    def draw_bone(self, surface):
-        # Perpendicular angles rib cage (pankhudi) banane ke liye
-        perp_angle1 = self.angle + math.pi / 2
-        perp_angle2 = self.angle - math.pi / 2
+    // Container ke andar mouse track karne ke liye event listener
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        mouse.x = e.clientX - rect.left;
+        mouse.y = e.clientY - rect.top;
+    });
 
-        # Spine Point (Reeth ki haddi)
-        pygame.draw.circle(surface, (255, 255, 255), (int(self.x), int(self.y)), 2)
+    // Touch screen mobiles ke liye support
+    canvas.addEventListener('touchmove', (e) => {
+        if(e.touches.length > 0) {
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = e.touches[0].clientX - rect.left;
+            mouse.y = e.touches[0].clientY - rect.top;
+            e.preventDefault();
+        }
+    }, { passive: False });
 
-        if self.size > 2:
-            # Ribs ke dono corners nikalna
-            r1_x = self.x + math.cos(perp_angle1) * self.size
-            r1_y = self.y + math.sin(perp_angle1) * self.size
-            r2_x = self.x + math.cos(perp_angle2) * self.size
-            r2_y = self.y + math.sin(perp_angle2) * self.size
+    class Segment {
+        constructor(x, y, length, size) {
+            this.x = x;
+            this.y = y;
+            this.length = length;
+            this.size = size;
+            this.angle = 0;
+        }
 
-            # Agla point jahan haddi judti hai
-            tip_x = self.x + math.cos(self.angle) * self.length
-            tip_y = self.y + math.sin(self.angle) * self.length
+        update(targetX, targetY) {
+            let dx = targetX - this.x;
+            let dy = targetY - this.y;
+            this.angle = Math.atan2(dy, dx);
+            this.x = targetX - Math.cos(this.angle) * this.length;
+            this.y = targetY - Math.sin(this.angle) * this.length;
+        }
 
-            # Rib lines draw karna
-            pygame.draw.line(surface, (230, 230, 230), (int(self.x), int(self.y)), (int(r1_x), int(r1_y)), 2)
-            pygame.draw.line(surface, (230, 230, 230), (int(self.x), int(self.y)), (int(r2_x), int(r2_y)), 2)
+        drawBone() {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.rotate(this.angle);
             
-            # Cage look ke liye corners ko aage jodna
-            pygame.draw.line(surface, (180, 180, 180), (int(r1_x), int(r1_y)), (int(tip_x), int(tip_y)), i=1)
-            pygame.draw.line(surface, (180, 180, 180), (int(r2_x), int(r2_y)), (int(tip_x), int(tip_y)), i=1)
-        else:
-            # Tail (Ponchh) ki patli single line
-            tip_x = self.x + math.cos(self.angle) * self.length
-            tip_y = self.y + math.sin(self.angle) * self.length
-            pygame.draw.line(surface, (230, 230, 230), (int(self.x), int(self.y)), (int(tip_x), int(tip_y)), 2)
+            ctx.strokeStyle = "rgba(240, 240, 240, 0.85)";
+            ctx.lineWidth = 2;
+            
+            // Spine Point
+            ctx.beginPath();
+            ctx.arc(0, 0, 1.5, 0, Math.PI * 2);
+            ctx.fillStyle = "#fff";
+            ctx.fill();
 
-# Pair (Limbs) draw karne wala function
-def draw_leg(surface, start_x, start_y, angle, side, phase):
-    leg_angle = angle + (side * math.pi / 2.5) + math.sin(phase) * 0.2
-    
-    # Joint 1
-    joint_x = start_x + math.cos(leg_angle) * 25
-    joint_y = start_y + math.sin(leg_angle) * 25
-    
-    # Claw (Panja)
-    claw_angle = leg_angle + (side * 0.5)
-    claw_x = joint_x + math.cos(claw_angle) * 15
-    claw_y = joint_y + math.sin(claw_angle) * 15
-    
-    pygame.draw.line(surface, (200, 200, 200), (int(start_x), int(start_y)), (int(joint_x), int(joint_y)), 3)
-    pygame.draw.line(surface, (200, 200, 200), (int(joint_x), int(joint_y)), (int(claw_x), int(claw_y)), 2)
+            // Ribs Drawing
+            if (this.size > 2) {
+                ctx.beginPath();
+                ctx.moveTo(0, -this.size);
+                ctx.quadraticCurveTo(this.length / 2, -this.size * 0.8, this.length, 0);
+                ctx.quadraticCurveTo(this.length / 2, this.size * 0.8, 0, this.size);
+                ctx.stroke();
+            } else {
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(this.length, 0);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+    }
 
-# Dragon Initial Structure
-segments = []
-num_segments = 35
-segment_length = 15
+    const segments = [];
+    const numSegments = 38; 
+    const segmentLength = 13; 
 
-# Initial mouse positions
-mouse_x, mouse_y = WIDTH // 2, HEIGHT // 2
+    for (let i = 0; i < numSegments; i++) {
+        let size = Math.sin((i / numSegments) * Math.PI) * 20;
+        if(i < 5) size = 10 + i * 2; 
+        segments.push(new Segment(mouse.x, mouse.y, segmentLength, size));
+    }
 
-for i in range(num_segments):
-    # Center mota hoga aur dono sides patli honi chahiye transitions ke liye
-    size = math.sin((i / num_segments) * math.pi) * 22
-    if i < 5:
-        size = 12 + i * 2  # Neck section
-    segments.append(Segment(mouse_x, mouse_y, segment_length, size))
-
-animation_frame = 0
-
-# Trail surface setup taaki video jaisa halka peeche shadow chhoote
-trail_surface = pygame.Surface((WIDTH, HEIGHT))
-trail_surface.set_alpha(70) # Trail effect intensity
-trail_surface.fill((17, 17, 17))
-
-# Main Game Loop
-while True:
-    animation_frame += 1
-    
-    # Event Check (Window close karne ke liye)
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
-
-    # Get Current Mouse Position
-    mouse_x, mouse_y = pygame.mouse.get_pos()
-
-    # Background black trail chadhana
-    screen.blit(trail_surface, (0, 0))
-
-    # Target points update system
-    target_x = mouse_x
-    target_y = mouse_y
-
-    # Head (Sar) segment drawing logic
-    head_angle = segments[0].angle
-    pygame.draw.circle(screen, (255, 255, 255), (int(target_x), int(target_y)), 7)
-    
-    # Head Jaws / Horns lines
-    h1_x = target_x + math.cos(head_angle + 2.5) * 15
-    h1_y = target_y + math.sin(head_angle + 2.5) * 15
-    h2_x = target_x + math.cos(head_angle - 2.5) * 15
-    h2_y = target_y + math.sin(head_angle - 2.5) * 15
-    pygame.draw.line(screen, (255, 255, 255), (int(target_x), int(target_y)), (int(h1_x), int(h1_y)), 2)
-    pygame.draw.line(screen, (255, 255, 255), (int(target_x), int(target_y)), (int(h2_x), int(h2_y)), 2)
-
-    # Poori body update aur draw loop
-    for i in range(len(segments)):
-        segments[i].update(target_x, target_y)
-        segments[i].draw_bone(screen)
+    function drawLeg(startX, startY, angle, side, phase) {
+        ctx.save();
+        ctx.translate(startX, startY);
+        ctx.rotate(angle + (side * Math.PI / 2.5) + Math.sin(phase) * 0.25);
         
-        # Sahi segments par legs lagana
-        if i == 7: # Front legs
-            draw_leg(screen, segments[i].x, segments[i].y, segments[i].angle, 1, animation_frame * 0.1)
-            draw_leg(screen, segments[i].x, segments[i].y, segments[i].angle, -1, animation_frame * 0.1)
-        if i == 18: # Back legs
-            draw_leg(screen, segments[i].x, segments[i].y, segments[i].angle, 1, animation_frame * 0.1 + math.pi)
-            draw_leg(screen, segments[i].x, segments[i].y, segments[i].angle, -1, animation_frame * 0.1 + math.pi)
+        ctx.strokeStyle = "rgba(210, 210, 210, 0.9)";
+        ctx.lineWidth = 2.5;
+        
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(22, 0);
+        ctx.lineTo(32, 12 * side);
+        ctx.stroke();
+        ctx.restore();
+    }
 
-        # Agla segment pichle segment ke piche chalega
-        target_x = segments[i].x
-        target_y = segments[i].y
+    let animationFrame = 0;
 
-    pygame.display.flip()
-    clock.tick(60) # 60 FPS Super smooth speed
-                         
+    function loop() {
+        // Trail Motion effect paida karne ke liye semi-transparent overlay
+        ctx.fillStyle = 'rgba(17, 17, 17, 0.25)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        animationFrame++;
+
+        let targetX = mouse.x;
+        let targetY = mouse.y;
+
+        // Head Drawing Logic
+        ctx.save();
+        let headAngle = segments[0] ? segments[0].angle : 0;
+        ctx.translate(targetX, targetY);
+        ctx.rotate(headAngle);
+        ctx.fillStyle = "#fff";
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        
+        ctx.beginPath();
+        ctx.arc(0, 0, 6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.beginPath();
+        ctx.moveTo(4, -3); ctx.lineTo(-10, -8);
+        ctx.moveTo(4, 3); ctx.lineTo(-10, 8);
+        ctx.stroke();
+        ctx.restore();
+
+        // Segments Chain loop
+        for (let i = 0; i < segments.length; i++) {
+            segments[i].update(targetX, targetY);
+            segments[i].drawBone();
+            
+            if (i === 6) { 
+                drawLeg(segments[i].x, segments[i].y, segments[i].angle, 1, animationFrame * 0.12);
+                drawLeg(segments[i].x, segments[i].y, segments[i].angle, -1, animationFrame * 0.12);
+            }
+            if (i === 16) { 
+                drawLeg(segments[i].x, segments[i].y, segments[i].angle, 1, animationFrame * 0.12 + Math.PI);
+                drawLeg(segments[i].x, segments[i].y, segments[i].angle, -1, animationFrame * 0.12 + Math.PI);
+            }
+
+            targetX = segments[i].x;
+            targetY = segments[i].y;
+        }
+
+        requestAnimationFrame(loop);
+    }
+
+    // Direct loop call
+    loop();
+</script>
+"""
+
+# Streamlit application mein html content render karein
+components.html(html_code, height=600, scrolling=False)
